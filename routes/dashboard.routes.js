@@ -75,112 +75,128 @@ router.get('/activity-log', authenticateToken, async (req, res) => {
 // GET /api/me/notifications - Get all notifications for the user (DYNAMIC - FROM DATABASE)
 router.get('/me/notifications', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
+    const tenantId = parseInt(req.user.tenantId);
+    const userType = req.user.userType;
     const notifications = [];
 
-    // Get employee_id for leave_requests and correction_requests lookup
+    // Get employee record for this user within the same tenant
     const empResult = await pool.query(
-      'SELECT employee_id, id FROM employees WHERE id = $1 OR email = $2',
-      [userId, req.user.email]
+      'SELECT employee_id, id, full_name FROM employees WHERE id = $1 AND tenant_id = $2',
+      [userId, tenantId]
     );
     const employeeId = empResult.rows[0]?.employee_id;
     const employeeDbId = empResult.rows[0]?.id;
 
-    // 1. Fetch pending leave requests where user is involved
-    const leaveResults = employeeId ? await pool.query(`
-      SELECT 
-        CONCAT('leave-', id) as id,
-        'request' as type,
-        CASE 
-          WHEN status = 'pending' THEN 'Your vacation request is pending'
-          WHEN status = 'approved' THEN 'Your vacation request was approved'
-          WHEN status = 'rejected' THEN 'Your vacation request was rejected'
-        END as title,
-        CONCAT(
-          'Leave request for ', 
-          TO_CHAR(start_date, 'DD-Mon-YYYY'),
-          ' to ',
-          TO_CHAR(end_date, 'DD-Mon-YYYY'),
-          ' (',
-          total_days::TEXT,
-          ' days)'
-        ) as message,
-        CASE WHEN status = 'pending' THEN false ELSE true END as read,
-        TO_CHAR(created_at, 'HH:MI') as created_at,
-        created_at as created_at_timestamp,
-        status
-      FROM leave_requests
-      WHERE employee_id = $1
-      ORDER BY created_at DESC
-      LIMIT 50
-    `, [employeeId]) : { rows: [] };
+    // 1. Fetch leave requests belonging to this user (tenant-isolated)
+    if (employeeId) {
+      try {
+        const leaveResults = await pool.query(`
+          SELECT 
+            CONCAT('leave-', lr.id) as id,
+            'request' as type,
+            CASE 
+              WHEN lr.status = 'pending' THEN 'Your vacation request is pending'
+              WHEN lr.status = 'approved' THEN 'Your vacation request was approved'
+              WHEN lr.status = 'rejected' THEN 'Your vacation request was rejected'
+            END as title,
+            CONCAT(
+              'Leave request for ', 
+              TO_CHAR(lr.start_date, 'DD-Mon-YYYY'),
+              ' to ',
+              TO_CHAR(lr.end_date, 'DD-Mon-YYYY'),
+              ' (',
+              lr.total_days::TEXT,
+              ' days)'
+            ) as message,
+            CASE WHEN lr.status = 'pending' THEN false ELSE true END as read,
+            TO_CHAR(lr.created_at, 'HH24:MI') as created_at,
+            lr.created_at as created_at_timestamp,
+            lr.status
+          FROM leave_requests lr
+          JOIN employees e ON lr.employee_id::text = e.id::text
+          WHERE lr.employee_id::text = $1::text
+            AND e.tenant_id = $2
+          ORDER BY lr.created_at DESC
+          LIMIT 50
+        `, [employeeDbId, tenantId]);
+        notifications.push(...leaveResults.rows);
+      } catch(e) { /* table may not exist */ }
+    }
 
-    // 2. Fetch pending correction requests
-    const correctionResults = employeeId ? await pool.query(`
-      SELECT 
-        CONCAT('correction-', id) as id,
-        'request' as type,
-        CASE 
-          WHEN status = 'pending' THEN 'Your correction request is pending'
-          WHEN status = 'approved' THEN 'Your correction request was approved'
-          WHEN status = 'rejected' THEN 'Your correction request was rejected'
-        END as title,
-        CONCAT(
-          'Correction request for ',
-          TO_CHAR(date, 'DD-Mon-YYYY'),
-          ' (Status: ',
-          status,
-          ')'
-        ) as message,
-        CASE WHEN status = 'pending' THEN false ELSE true END as read,
-        TO_CHAR(created_at, 'HH:MI') as created_at,
-        created_at as created_at_timestamp,
-        status
-      FROM correction_requests
-      WHERE employee_id = $1
-      ORDER BY created_at DESC
-      LIMIT 50
-    `, [employeeId]) : { rows: [] };
+    // 2. Fetch correction requests belonging to this user (tenant-isolated)
+    if (employeeId) {
+      try {
+        const correctionResults = await pool.query(`
+          SELECT 
+            CONCAT('correction-', cr.id) as id,
+            'request' as type,
+            CASE 
+              WHEN cr.status = 'pending' THEN 'Your correction request is pending'
+              WHEN cr.status = 'approved' THEN 'Your correction request was approved'
+              WHEN cr.status = 'rejected' THEN 'Your correction request was rejected'
+            END as title,
+            CONCAT(
+              'Correction request for ',
+              TO_CHAR(cr.date, 'DD-Mon-YYYY'),
+              ' (Status: ',
+              cr.status,
+              ')'
+            ) as message,
+            CASE WHEN cr.status = 'pending' THEN false ELSE true END as read,
+            TO_CHAR(cr.created_at, 'HH24:MI') as created_at,
+            cr.created_at as created_at_timestamp,
+            cr.status
+          FROM correction_requests cr
+          JOIN employees e ON cr.employee_id::text = e.employee_id::text
+          WHERE cr.employee_id = $1
+            AND e.tenant_id = $2
+          ORDER BY cr.created_at DESC
+          LIMIT 50
+        `, [employeeId, tenantId]);
+        notifications.push(...correctionResults.rows);
+      } catch(e) { /* table may not exist */ }
+    }
 
-    // 3. Fetch pending requests that need approval (for managers/admins)
-    const approvalsNeeded = employeeDbId ? await pool.query(`
-      SELECT 
-        CONCAT('pending-approval-', id) as id,
-        'approval' as type,
-        'Approval Needed' as title,
-        CONCAT(
-          'You have a ', 
-          leave_type, 
-          ' request to review from ',
-          (SELECT full_name FROM employees WHERE employee_id = leave_requests.employee_id LIMIT 1),
-          ' for ',
-          TO_CHAR(start_date, 'DD-Mon')
-        ) as message,
-        false as read,
-        TO_CHAR(created_at, 'HH:MI') as created_at,
-        created_at as created_at_timestamp,
-        'pending' as status
-      FROM leave_requests
-      WHERE status = 'pending' 
-        AND created_at > NOW() - INTERVAL '7 days'
-      ORDER BY created_at DESC
-      LIMIT 50
-    `, []) : { rows: [] };
-
-    // Combine all notifications
-    const allNotifications = [
-      ...leaveResults.rows,
-      ...correctionResults.rows,
-      ...approvalsNeeded.rows
-    ];
+    // 3. Fetch pending requests that need approval (ONLY for admin users, tenant-isolated)
+    if (userType === 'admin') {
+      try {
+        const approvalsNeeded = await pool.query(`
+          SELECT 
+            CONCAT('pending-approval-', lr.id) as id,
+            'approval' as type,
+            'Approval Needed' as title,
+            CONCAT(
+              'You have a ', 
+              lr.leave_type, 
+              ' request to review from ',
+              e.full_name,
+              ' for ',
+              TO_CHAR(lr.start_date, 'DD-Mon')
+            ) as message,
+            false as read,
+            TO_CHAR(lr.created_at, 'HH24:MI') as created_at,
+            lr.created_at as created_at_timestamp,
+            'pending' as status
+          FROM leave_requests lr
+          JOIN employees e ON lr.employee_id::text = e.id::text
+          WHERE lr.status = 'pending' 
+            AND e.tenant_id = $1
+            AND lr.created_at > NOW() - INTERVAL '30 days'
+          ORDER BY lr.created_at DESC
+          LIMIT 50
+        `, [tenantId]);
+        notifications.push(...approvalsNeeded.rows);
+      } catch(e) { /* table may not exist */ }
+    }
 
     // Sort by created_at_timestamp (newest first)
-    allNotifications.sort((a, b) => 
+    notifications.sort((a, b) => 
       new Date(b.created_at_timestamp) - new Date(a.created_at_timestamp)
     );
 
     // Remove timestamp field before sending
-    const finalNotifications = allNotifications.map(({ created_at_timestamp, ...rest }) => rest);
+    const finalNotifications = notifications.map(({ created_at_timestamp, ...rest }) => rest);
 
     res.json({
       success: true,
