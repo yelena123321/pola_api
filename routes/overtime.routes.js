@@ -834,29 +834,48 @@ router.get('/time-correction-types', authenticateToken, (req, res) => {
 // GET /api/me/time-corrections - Get user's time correction requests (Database-driven)
 router.get('/me/time-corrections', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   
   try {
+    // Lookup employee_id from employees table
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE (id = $1 OR email = $2) AND tenant_id = $3',
+      [userId, req.user.email, tenantId]
+    );
+    const employeeId = empResult.rows[0]?.employee_id;
+
+    if (!employeeId) {
+      return res.json({
+        success: true,
+        data: { active_requests: [], total_count: 0, empty_state: { show: true, title: 'No Active Requests', message: 'Employee profile not found.', icon: 'clipboard-check', cta_label: 'New Request' } }
+      });
+    }
+
     const result = await pool.query(
-      `SELECT * FROM correction_requests 
-       WHERE employee_id = $1 AND status = 'pending' 
-       ORDER BY created_at DESC`,
-      [userId]
+      `SELECT cr.*, ct.name as correction_type_name
+       FROM correction_requests cr
+       LEFT JOIN correction_types ct ON cr.correction_type_id = ct.id
+       WHERE cr.employee_id = $1 AND cr.tenant_id = $2 AND cr.status = 'pending' 
+       ORDER BY cr.created_at DESC`,
+      [employeeId, tenantId]
     );
     
-    const activeRequests = result.rows.map(row => ({
-      id: row.id,
-      issue_type: row.correction_type,
-      issue_type_label: row.correction_type ? row.correction_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Time Correction',
-      date: row.date ? row.date.toISOString().split('T')[0] : null,
-      date_formatted: row.date ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
-      correction_time: row.corrected_start_time || row.corrected_end_time || null,
-      label: row.reason || row.description || '',
-      description: row.reason || row.description || '',
-      attachment_url: row.attachment_url || null,
-      status: row.status,
-      submitted_at: row.created_at,
-      submitted_at_formatted: getTimeAgo(row.created_at)
-    }));
+    const activeRequests = result.rows.map(row => {
+      const corrData = row.correction_data || {};
+      return {
+        id: row.id,
+        issue_type: row.correction_type_name || 'Time Correction',
+        issue_type_label: row.correction_type_name || 'Time Correction',
+        date: row.date ? row.date.toISOString().split('T')[0] : null,
+        date_formatted: row.date ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+        correction_time: corrData.new_clock_in_time || corrData.new_clock_out_time || corrData.start_time || null,
+        label: row.comment || '',
+        description: row.comment || '',
+        status: row.status,
+        submitted_at: row.created_at,
+        submitted_at_formatted: getTimeAgo(row.created_at)
+      };
+    });
 
     res.json({
       success: true,
@@ -910,15 +929,46 @@ function getTimeAgo(date) {
 router.post('/me/time-corrections', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const tenantId = req.user.tenantId;
-  const { date, issue_type, correction_time, label, description, corrected_start_time, corrected_end_time } = req.body;
+  const { date, issue_type, correction_type_id, correction_time, label, description, corrected_start_time, corrected_end_time } = req.body;
   
+  if (!date) {
+    return res.status(400).json({ success: false, message: 'date is required (YYYY-MM-DD)' });
+  }
+
   try {
+    // Lookup employee_id from employees table
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE (id = $1 OR email = $2) AND tenant_id = $3',
+      [userId, req.user.email, tenantId]
+    );
+    const employeeId = empResult.rows[0]?.employee_id;
+
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: 'Employee profile not found. Ensure your profile has an employee_id.' });
+    }
+
+    // Resolve correction_type_id: use provided id, or lookup by issue_type name
+    let resolvedTypeId = correction_type_id || null;
+    if (!resolvedTypeId && issue_type) {
+      const typeResult = await pool.query(
+        'SELECT id FROM correction_types WHERE (LOWER(name) = LOWER($1) OR LOWER(name) LIKE LOWER($2)) AND (tenant_id = $3 OR tenant_id IS NULL) AND is_active = true LIMIT 1',
+        [issue_type, `%${issue_type.replace(/_/g, ' ')}%`, tenantId]
+      );
+      resolvedTypeId = typeResult.rows[0]?.id || null;
+    }
+
+    // Build correction_data JSON from provided fields
+    const correctionData = {};
+    if (corrected_start_time || correction_time) correctionData.new_clock_in_time = corrected_start_time || correction_time;
+    if (corrected_end_time) correctionData.new_clock_out_time = corrected_end_time;
+    if (issue_type) correctionData.issue_type = issue_type;
+
     const result = await pool.query(
       `INSERT INTO correction_requests 
-       (employee_id, tenant_id, date, correction_type, corrected_start_time, corrected_end_time, reason, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())
+       (employee_id, tenant_id, date, correction_type_id, correction_data, comment, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW(), NOW())
        RETURNING *`,
-      [userId, tenantId, date, issue_type, corrected_start_time || correction_time, corrected_end_time, label || description]
+      [employeeId, tenantId, date, resolvedTypeId, JSON.stringify(correctionData), label || description || null]
     );
     
     const newRequest = result.rows[0];
@@ -929,9 +979,9 @@ router.post('/me/time-corrections', authenticateToken, async (req, res) => {
       data: {
         correction_id: newRequest.id,
         date: newRequest.date,
-        issue_type: newRequest.correction_type,
-        correction_time,
-        label,
+        issue_type: issue_type || 'Time Correction',
+        correction_time: correction_time || corrected_start_time || null,
+        label: label || description || null,
         status: 'pending',
         submitted_at: newRequest.created_at,
         estimated_processing_time: '24-48 hours'
@@ -941,7 +991,8 @@ router.post('/me/time-corrections', authenticateToken, async (req, res) => {
     console.error('Create time correction error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to submit time correction request'
+      message: 'Failed to submit time correction request',
+      error: error.message
     });
   }
 });
@@ -990,15 +1041,28 @@ router.put('/time-corrections/:id/status', authenticateToken, async (req, res) =
 // GET /api/me/time-corrections/history - Get time corrections history (Database-driven)
 router.get('/me/time-corrections/history', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   const { status } = req.query;
   
   try {
-    let query = `SELECT cr.*, e.full_name as reviewer_name 
+    // Lookup employee_id from employees table
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE (id = $1 OR email = $2) AND tenant_id = $3',
+      [userId, req.user.email, tenantId]
+    );
+    const employeeId = empResult.rows[0]?.employee_id;
+
+    if (!employeeId) {
+      return res.json({ success: true, data: { history: [], total_count: 0, approved_count: 0, rejected_count: 0, empty_state: { show: true, title: 'No History Found', message: 'Employee profile not found.', icon: 'history', cta_label: 'New Request' } } });
+    }
+
+    let query = `SELECT cr.*, ct.name as correction_type_name, e.full_name as reviewer_name 
                  FROM correction_requests cr
-                 LEFT JOIN employees e ON cr.reviewed_by = e.id
-                 WHERE cr.employee_id = $1 AND cr.status != 'pending'`;
-    const params = [userId];
-    let paramIndex = 2;
+                 LEFT JOIN correction_types ct ON cr.correction_type_id = ct.id
+                 LEFT JOIN employees e ON cr.approved_by = e.id
+                 WHERE cr.employee_id = $1 AND cr.tenant_id = $2 AND cr.status != 'pending'`;
+    const params = [employeeId, tenantId];
+    let paramIndex = 3;
     
     if (status && ['approved', 'rejected'].includes(status)) {
       query += ` AND cr.status = $${paramIndex}`;
@@ -1009,23 +1073,27 @@ router.get('/me/time-corrections/history', authenticateToken, async (req, res) =
     
     const result = await pool.query(query, params);
     
-    const history = result.rows.map(row => ({
-      id: row.id,
-      issue_type: row.correction_type,
-      issue_type_label: row.correction_type ? row.correction_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Time Correction',
-      date: row.date ? row.date.toISOString().split('T')[0] : null,
-      date_formatted: row.date ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
-      correction_time: row.corrected_start_time || row.corrected_end_time || null,
-      label: row.reason || '',
-      status: row.status,
-      submitted_at: row.created_at,
-      approved_at: row.status === 'approved' ? row.reviewed_at : null,
-      rejected_at: row.status === 'rejected' ? row.reviewed_at : null,
-      approved_by: row.status === 'approved' ? row.reviewer_name : null,
-      rejected_by: row.status === 'rejected' ? row.reviewer_name : null,
-      rejection_reason: row.rejection_reason || null,
-      processed_at_formatted: row.reviewed_at ? getTimeAgo(row.reviewed_at) : null
-    }));
+    const history = result.rows.map(row => {
+      const corrData = row.correction_data || {};
+      return {
+        id: row.id,
+        issue_type: row.correction_type_name || 'Time Correction',
+        issue_type_label: row.correction_type_name || 'Time Correction',
+        date: row.date ? row.date.toISOString().split('T')[0] : null,
+        date_formatted: row.date ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+        correction_time: corrData.new_clock_in_time || corrData.new_clock_out_time || corrData.start_time || null,
+        label: row.comment || '',
+        status: row.status,
+        submitted_at: row.created_at,
+        approved_at: row.status === 'approved' ? row.approved_at : null,
+        rejected_at: row.status === 'rejected' ? row.approved_at : null,
+        approved_by: row.status === 'approved' ? row.reviewer_name : null,
+        rejected_by: row.status === 'rejected' ? row.reviewer_name : null,
+        rejection_reason: row.rejection_reason || null,
+        admin_comment: row.admin_comment || null,
+        processed_at_formatted: row.approved_at ? getTimeAgo(row.approved_at) : null
+      };
+    });
     
     const approvedCount = result.rows.filter(r => r.status === 'approved').length;
     const rejectedCount = result.rows.filter(r => r.status === 'rejected').length;

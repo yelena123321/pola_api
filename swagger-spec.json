@@ -1240,7 +1240,7 @@
                   "full_name": {
                     "type": "string",
                     "description": "Admin full name",
-                    "example": "Max Müller"
+                    "example": "Max M\u00fcller"
                   },
                   "email_address": {
                     "type": "string",
@@ -1265,7 +1265,7 @@
               },
               "example": {
                 "session_id": "reg_abc123xyz789",
-                "full_name": "Max Müller",
+                "full_name": "Max M\u00fcller",
                 "email_address": "max.muller@techsolutions.ch",
                 "password": "SecurePass123!",
                 "confirm_password": "SecurePass123!"
@@ -3768,7 +3768,7 @@
                               },
                               "description": {
                                 "type": "string",
-                                "example": "Jenny Wilson · Nov 12-14"
+                                "example": "Jenny Wilson \u00b7 Nov 12-14"
                               },
                               "actor_name": {
                                 "type": "string",
@@ -4958,287 +4958,6 @@
         }
       }
     },
-    "/api/me/timer/stop": {
-      "post": {
-        "tags": [
-          "Timer Management"
-        ],
-        "summary": "Stop Timer - Offline-First Batch Sync",
-        "description": "Sync timer entries from IndexedDB to server. Supports batch sync for offline-recorded timer sessions. All timer tracking (start, pause, resume) is done locally in IndexedDB, and only synced when user clicks 'Stop Working'.",
-        "operationId": "post__api_me_timer_stop",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "entries"
-                ],
-                "properties": {
-                  "entries": {
-                    "type": "array",
-                    "description": "Array of timer entries to sync (can be single or multiple for batch sync)",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "clock_in",
-                        "clock_out",
-                        "date"
-                      ],
-                      "properties": {
-                        "clock_in": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Start time (ISO 8601)",
-                          "example": "2026-03-06T08:00:00.000Z"
-                        },
-                        "clock_out": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "End time (ISO 8601)",
-                          "example": "2026-03-06T12:30:00.000Z"
-                        },
-                        "date": {
-                          "type": "string",
-                          "format": "date",
-                          "description": "Work date (YYYY-MM-DD)",
-                          "example": "2026-03-06"
-                        },
-                        "work_duration_seconds": {
-                          "type": "integer",
-                          "description": "Actual work time in seconds (excluding breaks)",
-                          "example": 16200
-                        },
-                        "total_paused_seconds": {
-                          "type": "integer",
-                          "description": "Total break/pause time in seconds",
-                          "example": 900
-                        },
-                        "duration_minutes": {
-                          "type": "integer",
-                          "description": "Work duration in minutes",
-                          "example": 270
-                        },
-                        "project_id": {
-                          "type": "integer",
-                          "description": "Project ID (optional)",
-                          "example": 5
-                        },
-                        "work_location": {
-                          "type": "string",
-                          "description": "Work location",
-                          "example": "office",
-                          "enum": [
-                            "office",
-                            "remote",
-                            "client_site"
-                          ]
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Work description",
-                          "example": "Working on PWA features"
-                        },
-                        "notes": {
-                          "type": "string",
-                          "description": "Additional notes",
-                          "example": "Completed offline sync implementation"
-                        },
-                        "source": {
-                          "type": "string",
-                          "description": "Source of timer entry",
-                          "example": "PWA",
-                          "default": "PWA"
-                        },
-                        "breaks": {
-                          "type": "array",
-                          "description": "Array of break/pause periods",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "start_time": {
-                                "type": "string",
-                                "format": "date-time",
-                                "example": "2026-03-06T10:00:00.000Z"
-                              },
-                              "end_time": {
-                                "type": "string",
-                                "format": "date-time",
-                                "example": "2026-03-06T10:15:00.000Z"
-                              },
-                              "duration_seconds": {
-                                "type": "integer",
-                                "example": 900
-                              },
-                              "break_type": {
-                                "type": "string",
-                                "example": "coffee",
-                                "description": "Break type name from break_types table"
-                              },
-                              "break_type_id": {
-                                "type": "integer",
-                                "example": 2,
-                                "description": "Break type ID referencing break_types table"
-                              },
-                              "description": {
-                                "type": "string",
-                                "example": "Coffee break"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "example": {
-                "entries": [
-                  {
-                    "clock_in": "2026-03-06T08:00:00.000Z",
-                    "clock_out": "2026-03-06T12:30:00.000Z",
-                    "date": "2026-03-06",
-                    "work_duration_seconds": 16200,
-                    "total_paused_seconds": 900,
-                    "duration_minutes": 270,
-                    "project_id": 5,
-                    "work_location": "office",
-                    "description": "Working on offline sync",
-                    "notes": "Completed successfully",
-                    "source": "PWA",
-                    "breaks": [
-                      {
-                        "start_time": "2026-03-06T10:00:00.000Z",
-                        "end_time": "2026-03-06T10:15:00.000Z",
-                        "duration_seconds": 900,
-                        "break_type": "coffee",
-                        "break_type_id": 2,
-                        "description": "Coffee break"
-                      }
-                    ]
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Timer entries synced successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "1 timer entry synced successfully"
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "synced_count": {
-                          "type": "integer",
-                          "example": 1
-                        },
-                        "failed_count": {
-                          "type": "integer",
-                          "example": 0
-                        },
-                        "synced_entries": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer",
-                                "example": 123
-                              },
-                              "date": {
-                                "type": "string",
-                                "example": "2026-03-06"
-                              },
-                              "clock_in": {
-                                "type": "string",
-                                "example": "2026-03-06T08:00:00.000Z"
-                              },
-                              "clock_out": {
-                                "type": "string",
-                                "example": "2026-03-06T12:30:00.000Z"
-                              },
-                              "duration_minutes": {
-                                "type": "integer",
-                                "example": 270
-                              },
-                              "work_duration_seconds": {
-                                "type": "integer",
-                                "example": 16200
-                              },
-                              "breaks_count": {
-                                "type": "integer",
-                                "example": 1
-                              }
-                            }
-                          }
-                        },
-                        "failed_entries": {
-                          "type": "array",
-                          "description": "Only present if some entries failed",
-                          "items": {
-                            "type": "object"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing authentication token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/me/timer/history": {
       "get": {
         "tags": [
@@ -5416,161 +5135,6 @@
           },
           "500": {
             "description": "Server error"
-          }
-        }
-      }
-    },
-    "/api/me/timer/break": {
-      "post": {
-        "tags": [
-          "User Profile"
-        ],
-        "summary": "POST /api/me/timer/break",
-        "description": "Endpoint for /api/me/timer/break",
-        "operationId": "post__api_me_timer_break",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing authentication token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "breakType"
-                ],
-                "properties": {
-                  "break_type": {
-                    "type": "string",
-                    "description": "Break type name from break_types table. Either break_type or break_type_id is required.",
-                    "example": "coffee"
-                  },
-                  "break_type_id": {
-                    "type": "integer",
-                    "description": "Break type ID referencing break_types table. Either break_type or break_type_id is required.",
-                    "example": 2
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Optional description for the break",
-                    "example": "Quick coffee break"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "User Profile"
-        ],
-        "summary": "PUT /api/me/timer/break",
-        "description": "Endpoint for /api/me/timer/break",
-        "operationId": "put__api_me_timer_break",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing authentication token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
           }
         }
       }
@@ -7302,7 +6866,7 @@
           "Admin - Employees"
         ],
         "summary": "Get All Employees",
-        "description": "Get all employees with optional filters for date range, month, year, status, department, role, and search. Search works across name, email, employee_id, phone — results are always paginated based on the filtered/searched set.",
+        "description": "Get all employees with optional filters for date range, month, year, status, department, role, and search. Search works across name, email, employee_id, phone \u2014 results are always paginated based on the filtered/searched set.",
         "operationId": "get__api_admin_employees",
         "security": [
           {
@@ -7977,7 +7541,7 @@
           "Company"
         ],
         "summary": "DELETE /api/company/account",
-        "description": "🚨 DANGER: Permanently delete company account and ALL data (Admin only). Requires typing 'DELETE' to confirm. This action is IRREVERSIBLE.",
+        "description": "\ud83d\udea8 DANGER: Permanently delete company account and ALL data (Admin only). Requires typing 'DELETE' to confirm. This action is IRREVERSIBLE.",
         "operationId": "delete__api_company_account",
         "security": [
           {
@@ -12209,7 +11773,7 @@
                             },
                             "city": {
                               "type": "string",
-                              "example": "Zürich"
+                              "example": "Z\u00fcrich"
                             },
                             "postal_code": {
                               "type": "string",
@@ -12221,7 +11785,7 @@
                             },
                             "full_address": {
                               "type": "string",
-                              "example": "Bahnhofstrasse 10, 8001 Zürich, Switzerland"
+                              "example": "Bahnhofstrasse 10, 8001 Z\u00fcrich, Switzerland"
                             }
                           }
                         },
@@ -13948,7 +13512,7 @@
           "Company"
         ],
         "summary": "POST /api/company/settings/reset",
-        "description": "⚠️ Reset company settings to default values. This will reset ALL company settings including working hours, preferences, and localization. Admin only.",
+        "description": "\u26a0\ufe0f Reset company settings to default values. This will reset ALL company settings including working hours, preferences, and localization. Admin only.",
         "security": [
           {
             "BearerAuth": []
@@ -15474,43 +15038,6 @@
         }
       }
     },
-    "/api/me/activity": {
-      "get": {
-        "tags": [
-          "User Activity"
-        ],
-        "summary": "Get user activity feed",
-        "description": "Returns the logged-in user activity log (database-driven)",
-        "operationId": "getUserActivity",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "default": 20
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/admin/recent-activity": {
       "get": {
         "tags": [
@@ -15571,107 +15098,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/me/time-corrections": {
-      "get": {
-        "tags": [
-          "Time Corrections"
-        ],
-        "summary": "Get user time corrections",
-        "description": "Returns active time correction requests (database-driven)",
-        "operationId": "getUserTimeCorrections",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Time Corrections"
-        ],
-        "summary": "Create time correction request",
-        "description": "Submit a new time correction request (database-driven)",
-        "operationId": "createTimeCorrection",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "date": {
-                    "type": "string"
-                  },
-                  "issue_type": {
-                    "type": "string"
-                  },
-                  "correction_time": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created"
-          }
-        }
-      }
-    },
-    "/api/me/time-corrections/history": {
-      "get": {
-        "tags": [
-          "Time Corrections"
-        ],
-        "summary": "Get time corrections history",
-        "description": "Returns completed time correction requests (database-driven)",
-        "operationId": "getTimeCorrectionHistory",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "approved",
-                "rejected"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
           }
         }
       }
