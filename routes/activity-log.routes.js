@@ -11,6 +11,13 @@ module.exports = function(deps) {
 // ==================== ADMIN ACTIVITY LOG API (Figma Design) ====================
 // GET /api/admin/activity-log - Activity Log with Category, Actor, Date Range, Search filters
 router.get('/admin/activity-log', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { search, category, actor, date_range, date_from, date_to, sort, page, limit } = req.query;
   const tenantId = req.user.tenantId;
 
@@ -211,6 +218,13 @@ router.get('/admin/activity-log', authenticateToken, async (req, res) => {
 // POST /api/company/settings/reset - Reset company settings to default (admin)
 router.post('/company/settings/reset', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     
     // Update company settings with default values
@@ -513,6 +527,13 @@ router.get('/dashboard', (req, res) => {
   });
 });
 router.get('/admin/dashboard', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   console.log('📊 Admin Dashboard API called');
 
   try {

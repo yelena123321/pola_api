@@ -130,6 +130,13 @@ router.get('/company/settings', authenticateToken, async (req, res) => {
 // UPDATE Complete Company Settings
 router.put('/company/settings', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
     const allowedFields = ['name', 'industry', 'brand_color', 'brand_color_name', 'support_email', 'company_phone', 'address', 'website', 'description', 'timezone', 'employee_count', 'founded_date'];
@@ -193,6 +200,13 @@ router.put('/company/settings', authenticateToken, async (req, res) => {
 // UPDATE Company Name
 router.put('/company/settings/name', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { name } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -234,6 +248,13 @@ router.put('/company/settings/name', authenticateToken, async (req, res) => {
 // UPDATE Industry/Category
 router.put('/company/settings/industry', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { industry } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -275,6 +296,13 @@ router.put('/company/settings/industry', authenticateToken, async (req, res) => 
 // UPDATE Brand Color
 router.put('/company/settings/brand-color', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { brand_color, brand_color_name } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -332,6 +360,13 @@ router.put('/company/settings/brand-color', authenticateToken, async (req, res) 
 // UPDATE Support Email
 router.put('/company/settings/support-email', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { support_email } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -373,6 +408,13 @@ router.put('/company/settings/support-email', authenticateToken, async (req, res
 // UPDATE Company Phone
 router.put('/company/settings/company-phone', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { company_phone } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -414,6 +456,13 @@ router.put('/company/settings/company-phone', authenticateToken, async (req, res
 // UPDATE Address
 router.put('/company/settings/address', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { address } = req.body;
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
@@ -455,6 +504,13 @@ router.put('/company/settings/address', authenticateToken, async (req, res) => {
 // UPLOAD Company Logo
 router.post('/company/settings/logo', authenticateToken, uploadCompanyLogo.single('logo'), async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
     
@@ -593,6 +649,13 @@ router.get('/company/working-hours', authenticateToken, async (req, res) => {
 // PUT Working Hours - Update company working schedule
 router.put('/company/working-hours', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
     const {
@@ -834,6 +897,13 @@ router.get('/company/preferences', authenticateToken, async (req, res) => {
 // PUT /api/company/preferences - Update company preferences
 router.put('/company/preferences', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     await ensureCompanySettings(pool, tenantId);
     const {

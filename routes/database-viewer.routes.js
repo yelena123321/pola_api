@@ -87,6 +87,13 @@ router.get('/db-viewer/table/:tableName', authenticateToken, async (req, res) =>
 
 // Get All Projects (Admin)
 router.get('/admin/projects', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const tenantId = req.user.tenantId;
   
   try {
@@ -125,6 +132,13 @@ router.get('/admin/projects', authenticateToken, async (req, res) => {
 
 // Create New Project (Admin)
 router.post('/admin/projects', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { name, description, start_date, end_date, color } = req.body;
   const tenantId = req.user.tenantId;
   
@@ -161,6 +175,13 @@ router.post('/admin/projects', authenticateToken, async (req, res) => {
 
 // Get Single Project (Admin)
 router.get('/admin/projects/:id', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   const tenantId = req.user.tenantId;
   
@@ -201,6 +222,13 @@ router.get('/admin/projects/:id', authenticateToken, async (req, res) => {
 
 // Update Project (Admin)
 router.put('/admin/projects/:id', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   const { name, description, color, status } = req.body;
   const tenantId = req.user.tenantId;
@@ -241,6 +269,13 @@ router.put('/admin/projects/:id', authenticateToken, async (req, res) => {
 
 // Delete Project (Admin)
 router.delete('/admin/projects/:id', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   const tenantId = req.user.tenantId;
   
@@ -272,6 +307,13 @@ router.delete('/admin/projects/:id', authenticateToken, async (req, res) => {
 
 // Assign Employees to Project (Admin)
 router.post('/admin/projects/:id/assign-employees', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   const { employee_ids } = req.body;
   
@@ -368,6 +410,13 @@ router.post('/admin/projects/:id/assign-employees', authenticateToken, async (re
 
 // Get Project Employees (Admin)
 router.get('/admin/projects/:id/employees', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   
   try {
@@ -406,6 +455,13 @@ router.get('/admin/projects/:id/employees', authenticateToken, async (req, res) 
 
 // Remove Employee from Project (Admin)
 router.delete('/admin/projects/:id/employees/:employeeId', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id, employeeId } = req.params;
   
   try {
@@ -440,6 +496,13 @@ router.delete('/admin/projects/:id/employees/:employeeId', authenticateToken, as
 
 // GET Admin Timesheets - View all employee timesheets with filters
 router.get('/admin/timesheets', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { 
     search,           // Search by employee name
     status,           // Filter: all, completed, pending, missing_entry, early_leave
@@ -605,6 +668,13 @@ function getStatusLabel(status) {
 
 // GET Single Timesheet Details (for view/edit modal)
 router.get('/admin/timesheets/:id', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   
   try {
@@ -817,6 +887,13 @@ router.get('/admin/timesheets/:id', authenticateToken, async (req, res) => {
 
 // UPDATE Timesheet (Admin edit)
 router.put('/admin/timesheets/:id', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { id } = req.params;
   const { clock_in, clock_out, status, notes, break_minutes } = req.body;
   
@@ -870,6 +947,13 @@ router.put('/admin/timesheets/:id', authenticateToken, async (req, res) => {
 
 // GET Timesheet Statistics (for dashboard)
 router.get('/admin/timesheets/stats/summary', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { start_date, end_date } = req.query;
   
   try {
@@ -931,6 +1015,13 @@ router.get('/admin/timesheets/stats/summary', authenticateToken, async (req, res
 
 // BULK Update Timesheet Status
 router.post('/admin/timesheets/bulk-update', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { ids, status } = req.body;
   
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -979,6 +1070,13 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
 // Get Notification Settings (Admin)
 router.get('/admin/notification-settings', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     // Check if settings exist in DB
     const result = await pool.query(`
       SELECT * FROM notification_settings WHERE id = 1
@@ -1006,6 +1104,13 @@ router.get('/admin/notification-settings', authenticateToken, async (req, res) =
 
 // Update Notification Settings (Admin)
 router.put('/admin/notification-settings', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const { 
     break_reminder_after_minutes, 
     clock_out_reminder_after_hours, 

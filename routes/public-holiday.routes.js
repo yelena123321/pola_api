@@ -154,6 +154,13 @@ router.get('/public-holidays/detail/:id', authenticateToken, async (req, res) =>
 // ===== CREATE NEW PUBLIC HOLIDAY (Admin Only) =====
 router.post('/admin/public-holidays', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const userId = req.user.userId;
     const tenantId = req.user.tenantId;
 
@@ -211,6 +218,13 @@ router.post('/admin/public-holidays', authenticateToken, async (req, res) => {
 // ===== UPDATE PUBLIC HOLIDAY (Admin Only) =====
 router.put('/admin/public-holidays/:id', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { id } = req.params;
     const userId = req.user.userId;
     const tenantId = req.user.tenantId;
@@ -247,6 +261,13 @@ router.put('/admin/public-holidays/:id', authenticateToken, async (req, res) => 
 // ===== DELETE PUBLIC HOLIDAY (Admin Only) =====
 router.delete('/admin/public-holidays/:id', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const { id } = req.params;
     const { hard_delete } = req.query;
 
@@ -281,6 +302,13 @@ router.delete('/admin/public-holidays/:id', authenticateToken, async (req, res) 
 // ===== FIX NULL TENANT_ID IN PUBLIC HOLIDAYS (Admin Only) =====
 router.post('/admin/public-holidays/fix-tenant-id', authenticateToken, async (req, res) => {
   try {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
     const tenantId = req.user.tenantId;
     const userId = req.user.userId;
     

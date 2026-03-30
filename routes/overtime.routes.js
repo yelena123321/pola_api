@@ -615,6 +615,13 @@ function getActivityIcon(type) {
 
 // GET /api/admin/recent-activity - Get recent admin activity (Database-driven)
 router.get('/admin/recent-activity', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const tenantId = req.user.tenantId;
   const limit = parseInt(req.query.limit) || 20;
   

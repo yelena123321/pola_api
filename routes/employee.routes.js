@@ -11,7 +11,14 @@ module.exports = function(deps) {
 // ===== ADMIN APIs =====
 
 // GET User Complete Profile (Admin)
-router.get('/admin/users/:userId', authenticateToken, (req, res) => {
+router.get('/admin/users/:userId', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const adminId = req.user.userId;
   const targetUserId = parseInt(req.params.userId);
 
@@ -224,6 +231,13 @@ router.get('/admin/users/:userId', authenticateToken, (req, res) => {
 
 // ===== EDIT EMPLOYEE API (Company Admin) =====
 router.put('/admin/employees/:employeeId', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const adminId = req.user.userId;
   const employeeId = req.params.employeeId; // String like "EMP001"
 
@@ -758,6 +772,13 @@ router.post('/setup-account', async (req, res) => {
 
 // ===== INVITE EMPLOYEE API WITH FILE UPLOAD (multipart/form-data) =====
 router.post('/admin/employees/invite', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const adminId = req.user.userId;
   
   // Handle profile photo from express-fileupload
@@ -1205,7 +1226,14 @@ router.post('/admin/employees/invite', authenticateToken, async (req, res) => {
 });
 
 // ===== OLD INVITE EMPLOYEE API (JSON with base64) - Keeping for backward compatibility =====
-router.post('/admin/employees/invite-json', authenticateToken, (req, res) => {
+router.post('/admin/employees/invite-json', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   // This endpoint supports JSON with base64 encoded images
   // For file upload, use POST /api/admin/employees/invite with multipart/form-data
   return res.status(200).json({
@@ -1217,6 +1245,13 @@ router.post('/admin/employees/invite-json', authenticateToken, (req, res) => {
 
 // ===== GET EMPLOYEES BY DATE OF JOINING =====
 router.get('/admin/employees', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const adminId = req.user.userId;
   const tenantId = parseInt(req.user.tenantId);
   const userType = req.user.userType;
@@ -1261,28 +1296,31 @@ router.get('/admin/employees', authenticateToken, async (req, res) => {
     const params = [tenantId];
     let paramIndex = 2;
 
-    // Filter by date range (use created_at as the reliable timestamp field)
+    // Filter by date range (use joined_date if set, fallback to created_at)
+    // joined_date is varchar so cast via CASE to avoid type mismatch
     if (from_date) {
-      query += ` AND DATE(created_at) >= $${paramIndex}::date`;
+      query += ` AND (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END) >= $${paramIndex}::date`;
       params.push(from_date);
       paramIndex++;
     }
 
     if (to_date) {
-      query += ` AND DATE(created_at) <= $${paramIndex}::date`;
+      query += ` AND (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END) <= $${paramIndex}::date`;
       params.push(to_date);
       paramIndex++;
     }
 
-    // Filter by month and year
-    if (month && year) {
-      query += ` AND EXTRACT(MONTH FROM created_at) = $${paramIndex} AND EXTRACT(YEAR FROM created_at) = $${paramIndex + 1}`;
-      params.push(parseInt(month), parseInt(year));
-      paramIndex += 2;
-    } else if (year && !month) {
-      query += ` AND EXTRACT(YEAR FROM created_at) = $${paramIndex}`;
-      params.push(parseInt(year));
-      paramIndex++;
+    // Filter by month and year (only applied when from_date/to_date are NOT provided, to avoid double-filtering)
+    if (!from_date && !to_date) {
+      if (month && year) {
+        query += ` AND EXTRACT(MONTH FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${paramIndex} AND EXTRACT(YEAR FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${paramIndex + 1}`;
+        params.push(parseInt(month), parseInt(year));
+        paramIndex += 2;
+      } else if (year && !month) {
+        query += ` AND EXTRACT(YEAR FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${paramIndex}`;
+        params.push(parseInt(year));
+        paramIndex++;
+      }
     }
 
     // Filter by status (case-insensitive)
@@ -1332,23 +1370,25 @@ router.get('/admin/employees', authenticateToken, async (req, res) => {
     let countIndex = 2;
 
     if (from_date) {
-      countQuery += ` AND DATE(created_at) >= $${countIndex}::date`;
+      countQuery += ` AND (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END) >= $${countIndex}::date`;
       countParams.push(from_date);
       countIndex++;
     }
     if (to_date) {
-      countQuery += ` AND DATE(created_at) <= $${countIndex}::date`;
+      countQuery += ` AND (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END) <= $${countIndex}::date`;
       countParams.push(to_date);
       countIndex++;
     }
-    if (month && year) {
-      countQuery += ` AND EXTRACT(MONTH FROM created_at) = $${countIndex} AND EXTRACT(YEAR FROM created_at) = $${countIndex + 1}`;
-      countParams.push(parseInt(month), parseInt(year));
-      countIndex += 2;
-    } else if (year && !month) {
-      countQuery += ` AND EXTRACT(YEAR FROM created_at) = $${countIndex}`;
-      countParams.push(parseInt(year));
-      countIndex++;
+    if (!from_date && !to_date) {
+      if (month && year) {
+        countQuery += ` AND EXTRACT(MONTH FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${countIndex} AND EXTRACT(YEAR FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${countIndex + 1}`;
+        countParams.push(parseInt(month), parseInt(year));
+        countIndex += 2;
+      } else if (year && !month) {
+        countQuery += ` AND EXTRACT(YEAR FROM (CASE WHEN joined_date IS NOT NULL AND joined_date != '' THEN joined_date::date ELSE created_at::date END)) = $${countIndex}`;
+        countParams.push(parseInt(year));
+        countIndex++;
+      }
     }
     if (status) {
       countQuery += ` AND LOWER(status) = LOWER($${countIndex})`;
@@ -1444,6 +1484,13 @@ router.get('/admin/employees', authenticateToken, async (req, res) => {
 
 // ===== GET SECURITY LOGS (Admin Only) =====
 router.get('/admin/security-logs', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const tenantId = parseInt(req.user.tenantId);
   const userType = req.user.userType;
   const { page = 1, limit = 20, severity } = req.query;
@@ -1494,6 +1541,13 @@ router.get('/admin/security-logs', authenticateToken, async (req, res) => {
 
 // ===== DELETE EMPLOYEE API (Company Admin) =====
 router.delete('/admin/employees/:employeeId', authenticateToken, async (req, res) => {
+
+    // Verify admin role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
   const adminId = req.user.userId;
   const employeeId = req.params.employeeId; // Keep as string (e.g., "EMP001")
   const { confirmation } = req.body;
