@@ -352,41 +352,70 @@ router.delete('/admin/faqs/:id', authenticateToken, async (req, res) => {
 // ===== CONTACT SUPPORT API =====
 
 // Get support contact information (Public)
-router.get('/support/info', async (req, res) => {
+router.get('/support/info', authenticateToken, async (req, res) => {
   console.log('📞 Get support contact information request');
 
   try {
-    // Support contact details - can be configured in database or environment
-    const supportInfo = {
-      phone: {
-        number: '+41 44 123 45 67',
-        display: '+41 44 123 45 67',
-        available_hours: 'Mon-Fri 9:00 AM - 6:00 PM CET'
-      },
-      email: {
-        address: 'support@noviplan.ch',
-        response_time: 'Within 24 hours'
-      },
-      office: {
-        name: 'NoviPlan AG',
-        street: 'Bahnhofstrasse 10',
-        city: 'Zürich',
-        postal_code: '8001',
-        country: 'Switzerland',
-        full_address: 'Bahnhofstrasse 10, 8001 Zürich, Switzerland'
-      },
-      social: {
-        website: 'https://www.noviplan.ch',
-        linkedin: 'https://linkedin.com/company/noviplan'
-      }
-    };
+    const tenantId = req.user.tenantId;
 
-    console.log('✅ Support info retrieved successfully');
+    // Try to get company-specific support info from company_settings
+    let supportInfo = null;
+    try {
+      const settingsResult = await pool.query(
+        `SELECT support_phone, support_email, company_name, street, city, postal_code, country, website, linkedin
+         FROM company_settings WHERE tenant_id = $1 LIMIT 1`,
+        [tenantId]
+      );
+      if (settingsResult.rows.length > 0) {
+        const s = settingsResult.rows[0];
+        // Only use if at least one support field is set
+        if (s.support_phone || s.support_email) {
+          supportInfo = {
+            phone: {
+              number: s.support_phone || null,
+              display: s.support_phone || null,
+              available_hours: 'Mon-Fri 9:00 AM - 6:00 PM CET'
+            },
+            email: {
+              address: s.support_email || null,
+              response_time: 'Within 24 hours'
+            },
+            office: {
+              name: s.company_name || null,
+              street: s.street || null,
+              city: s.city || null,
+              postal_code: s.postal_code || null,
+              country: s.country || 'Switzerland',
+              full_address: [s.street, [s.postal_code, s.city].filter(Boolean).join(' '), s.country].filter(Boolean).join(', ') || null
+            },
+            social: {
+              website: s.website || null,
+              linkedin: s.linkedin || null
+            }
+          };
+        }
+      }
+    } catch (dbErr) {
+      console.log('⚠️ Could not fetch company support settings:', dbErr.message);
+    }
+
+    if (!supportInfo) {
+      console.log(`⚠️ No support info configured for tenant ${tenantId}`);
+      return res.json({
+        success: true,
+        message: 'Support contact information has not been configured by your company. Please ask your administrator to set up support details in Company Settings.',
+        data: null,
+        is_configured: false
+      });
+    }
+
+    console.log(`✅ Support info retrieved for tenant ${tenantId}`);
 
     res.json({
       success: true,
       message: 'Support contact information retrieved successfully',
-      data: supportInfo
+      data: supportInfo,
+      is_configured: true
     });
 
   } catch (error) {

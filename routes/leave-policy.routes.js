@@ -1242,12 +1242,20 @@ router.get('/time-entries', authenticateToken, async (req, res) => {
 // =============================================
 
 // Helper: get actual employee_id string from user id
-async function getActualEmployeeId(userId) {
+async function getActualEmployeeId(userId, tenantId) {
   try {
-    const empResult = await pool.query(
-      'SELECT employee_id FROM employees WHERE id = $1',
-      [userId]
-    );
+    let empResult;
+    if (tenantId) {
+      empResult = await pool.query(
+        'SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+        [userId, tenantId]
+      );
+    } else {
+      empResult = await pool.query(
+        'SELECT employee_id FROM employees WHERE id = $1',
+        [userId]
+      );
+    }
     return empResult.rows.length > 0 ? empResult.rows[0].employee_id : String(userId);
   } catch (e) {
     return String(userId);
@@ -1258,8 +1266,9 @@ async function getActualEmployeeId(userId) {
 router.get('/me/work-history/weekly', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
+    const tenantId = req.user?.tenantId;
     const { weekStart } = req.query;
-    const actualEmployeeId = await getActualEmployeeId(userId);
+    const actualEmployeeId = await getActualEmployeeId(userId, tenantId);
 
     // Calculate week boundaries (Monday-Sunday)
     let startOfWeek;
@@ -1280,14 +1289,15 @@ router.get('/me/work-history/weekly', authenticateToken, async (req, res) => {
     const startStr = startOfWeek.toISOString().split('T')[0];
     const endStr = endOfWeek.toISOString().split('T')[0];
 
-    // Get timer sessions (production schema: employee_id, clock_in, clock_out)
+    // Get timer sessions with tenant isolation via employees JOIN
     const sessionsResult = await pool.query(
-      `SELECT id, clock_in, clock_out, notes, project_id, work_location
-       FROM timers
-       WHERE employee_id = $1
-         AND date >= $2 AND date <= $3
-       ORDER BY clock_in ASC`,
-      [actualEmployeeId, startStr, endStr]
+      `SELECT t.id, t.clock_in, t.clock_out, t.notes, t.project_id, t.work_location
+       FROM timers t
+       INNER JOIN employees e ON e.employee_id::text = t.employee_id AND e.tenant_id = $4::integer
+       WHERE t.employee_id = $1
+         AND t.date >= $2 AND t.date <= $3
+       ORDER BY t.clock_in ASC`,
+      [actualEmployeeId, startStr, endStr, tenantId]
     );
 
     // Get breaks for these timer sessions
@@ -1460,20 +1470,22 @@ router.get('/me/work-history/weekly', authenticateToken, async (req, res) => {
 router.get('/me/work-history/day/:date', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
+    const tenantId = req.user?.tenantId;
     const dateParam = req.params.date;
-    const actualEmployeeId = await getActualEmployeeId(userId);
+    const actualEmployeeId = await getActualEmployeeId(userId, tenantId);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
       return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD' });
     }
 
-    // Get timer sessions for this day
+    // Get timer sessions with tenant isolation via employees JOIN
     const sessionsResult = await pool.query(
-      `SELECT id, clock_in, clock_out, notes, project_id, work_location
-       FROM timers
-       WHERE employee_id = $1 AND date = $2
-       ORDER BY clock_in ASC`,
-      [actualEmployeeId, dateParam]
+      `SELECT t.id, t.clock_in, t.clock_out, t.notes, t.project_id, t.work_location
+       FROM timers t
+       INNER JOIN employees e ON e.employee_id::text = t.employee_id AND e.tenant_id = $3::integer
+       WHERE t.employee_id = $1 AND t.date = $2
+       ORDER BY t.clock_in ASC`,
+      [actualEmployeeId, dateParam, tenantId]
     );
 
     // Get breaks for these sessions
@@ -1611,7 +1623,8 @@ router.get('/me/work-history/day/:date', authenticateToken, async (req, res) => 
 router.get('/me/work-history/monthly', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const actualEmployeeId = await getActualEmployeeId(userId);
+    const tenantId = req.user?.tenantId;
+    const actualEmployeeId = await getActualEmployeeId(userId, tenantId);
     const { year, month } = req.query;
 
     const y = parseInt(year) || new Date().getFullYear();
@@ -1619,15 +1632,16 @@ router.get('/me/work-history/monthly', authenticateToken, async (req, res) => {
     const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
     const endDate = new Date(y, m, 0).toISOString().split('T')[0];
 
-    // Get daily totals from timers
+    // Get daily totals from timers with tenant isolation via employees JOIN
     const timerResult = await pool.query(
-      `SELECT date as work_date,
-              SUM(EXTRACT(EPOCH FROM (COALESCE(clock_out, NOW()) - clock_in))) as total_seconds
-       FROM timers
-       WHERE employee_id = $1 AND date >= $2 AND date <= $3 AND clock_in IS NOT NULL
-       GROUP BY date
+      `SELECT t.date as work_date,
+              SUM(EXTRACT(EPOCH FROM (COALESCE(t.clock_out, NOW()) - t.clock_in))) as total_seconds
+       FROM timers t
+       INNER JOIN employees e ON e.employee_id::text = t.employee_id AND e.tenant_id = $4::integer
+       WHERE t.employee_id = $1 AND t.date >= $2 AND t.date <= $3 AND t.clock_in IS NOT NULL
+       GROUP BY t.date
        ORDER BY work_date`,
-      [actualEmployeeId, startDate, endDate]
+      [actualEmployeeId, startDate, endDate, tenantId]
     );
 
     // Get daily totals from time_entries as fallback

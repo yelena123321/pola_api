@@ -38,10 +38,9 @@ let persistentCorrectionRequests = {};
 let correctionRequestIdCounter = 1;
 
 // ====================================================================
-// LEAVE MANAGEMENT ROUTES - DISABLED (Now handled by routes/api.js)
+// LEAVE MANAGEMENT ROUTES
 // ====================================================================
 
-/*
 // GET Leave Types (Dropdown)
 router.get('/leave-types', authenticateToken, (req, res) => {
   const leaveTypes = [
@@ -120,15 +119,29 @@ router.get('/leave-types', authenticateToken, (req, res) => {
     }
   });
 });
-*/
 
-/*
 // GET User's Current/Upcoming Leave Requests (Today onwards)
 router.get('/me/leave-requests/current', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   
   try {
     const today = new Date().toISOString().split('T')[0];
+    
+    // Get actual employee_id for this user
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, tenantId]
+    );
+    const actualEmployeeId = empResult.rows[0]?.employee_id;
+    
+    if (!actualEmployeeId) {
+      return res.json({
+        success: true,
+        message: 'No employee found',
+        data: { ongoing: [], upcoming: [], all: [], total: 0, ongoingCount: 0, upcomingCount: 0, userId }
+      });
+    }
     
     // Get current and upcoming leave requests (end_date >= today)
     const result = await pool.query(`
@@ -140,10 +153,11 @@ router.get('/me/leave-requests/current', authenticateToken, async (req, res) => 
       FROM leave_requests lr
       LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id OR lr.leave_type = lt.name
       LEFT JOIN employees u ON lr.approved_by = u.id
-      WHERE lr.user_id = $1 
+      WHERE lr.employee_id = $1 
         AND lr.end_date >= $2
+        AND lr.tenant_id = $3::integer
       ORDER BY lr.start_date ASC, lr.created_at DESC
-    `, [userId, today]);
+    `, [actualEmployeeId, today, tenantId]);
 
     const leaveRequests = result.rows.map(lr => ({
       id: lr.id,
@@ -199,10 +213,26 @@ router.get('/me/leave-requests/current', authenticateToken, async (req, res) => 
 // GET User's Past Leave Requests (Ended before today)
 router.get('/me/leave-requests/past', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   const { limit = 50, offset = 0 } = req.query;
   
   try {
     const today = new Date().toISOString().split('T')[0];
+    
+    // Get actual employee_id for this user
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, tenantId]
+    );
+    const actualEmployeeId = empResult.rows[0]?.employee_id;
+    
+    if (!actualEmployeeId) {
+      return res.json({
+        success: true,
+        message: 'No employee found',
+        data: { leaveRequests: [], stats: { total: 0, approved: 0, rejected: 0, cancelled: 0 }, pagination: { limit: parseInt(limit), offset: parseInt(offset), hasMore: false }, userId }
+      });
+    }
     
     // Get past leave requests (end_date < today)
     const result = await pool.query(`
@@ -214,17 +244,18 @@ router.get('/me/leave-requests/past', authenticateToken, async (req, res) => {
       FROM leave_requests lr
       LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id OR lr.leave_type = lt.name
       LEFT JOIN employees u ON lr.approved_by = u.id
-      WHERE lr.user_id = $1 
+      WHERE lr.employee_id = $1 
         AND lr.end_date < $2
+        AND lr.tenant_id = $3::integer
       ORDER BY lr.end_date DESC, lr.created_at DESC
-      LIMIT $3 OFFSET $4
-    `, [userId, today, parseInt(limit), parseInt(offset)]);
+      LIMIT $4 OFFSET $5
+    `, [actualEmployeeId, today, tenantId, parseInt(limit), parseInt(offset)]);
 
     // Get total count for pagination
     const countResult = await pool.query(`
       SELECT COUNT(*) FROM leave_requests 
-      WHERE user_id = $1 AND end_date < $2
-    `, [userId, today]);
+      WHERE employee_id = $1 AND end_date < $2 AND tenant_id = $3::integer
+    `, [actualEmployeeId, today, tenantId]);
 
     const leaveRequests = result.rows.map(lr => ({
       id: lr.id,
@@ -286,13 +317,14 @@ router.get('/me/leave-requests/past', authenticateToken, async (req, res) => {
 // GET User's Leave Requests (All - Original endpoint)
 router.get('/me/leave-requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   const { status, leave_type_id, leave_type, start_date, end_date, sort_by = 'created_at', sort_order = 'desc', page = 1, limit = 50 } = req.query;
   
   try {
-    // First get actual employee_id from employees table
+    // First get actual employee_id from employees table (with tenant check)
     const empResult = await pool.query(
-      'SELECT employee_id, full_name FROM employees WHERE id = $1',
-      [userId]
+      'SELECT employee_id, full_name FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, tenantId]
     );
     const employeeData = empResult.rows[0];
     
@@ -304,10 +336,10 @@ router.get('/me/leave-requests', authenticateToken, async (req, res) => {
       });
     }
     
-    // Build query with filters
-    let query = `SELECT lr.* FROM leave_requests lr WHERE lr.employee_id = $1`;
-    const params = [employeeData.employee_id];
-    let paramCount = 2;
+    // Build query with filters (tenant isolated)
+    let query = `SELECT lr.* FROM leave_requests lr WHERE lr.employee_id = $1 AND lr.tenant_id = $2::integer`;
+    const params = [employeeData.employee_id, tenantId];
+    let paramCount = 3;
 
     if (status) {
       query += ` AND lr.status = $${paramCount}`;
@@ -335,10 +367,10 @@ router.get('/me/leave-requests', authenticateToken, async (req, res) => {
       paramCount++;
     }
 
-    // Count query
-    let countQuery = `SELECT COUNT(*) FROM leave_requests lr WHERE lr.employee_id = $1`;
-    const countParams = [employeeData.employee_id];
-    let countParamNum = 2;
+    // Count query (tenant isolated)
+    let countQuery = `SELECT COUNT(*) FROM leave_requests lr WHERE lr.employee_id = $1 AND lr.tenant_id = $2::integer`;
+    const countParams = [employeeData.employee_id, tenantId];
+    let countParamNum = 3;
 
     if (status) {
       countQuery += ` AND lr.status = $${countParamNum}`;
@@ -560,10 +592,10 @@ router.post('/me/leave-requests', authenticateToken, async (req, res) => {
     }
 
     // Check for overlapping leave requests for the same employee
-    // First get the actual employee_id - try by id then by email
-    let empLookup = await pool.query('SELECT employee_id FROM employees WHERE id = $1', [userId]);
+    // First get the actual employee_id - try by id then by email (with tenant check)
+    let empLookup = await pool.query('SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer', [userId, req.user.tenantId]);
     if (empLookup.rows.length === 0 && req.user.email) {
-      empLookup = await pool.query('SELECT employee_id FROM employees WHERE email = $1', [req.user.email]);
+      empLookup = await pool.query('SELECT employee_id FROM employees WHERE email = $1 AND tenant_id = $2::integer', [req.user.email, req.user.tenantId]);
     }
     const lookupEmployeeId = empLookup.rows[0]?.employee_id;
     console.log(`🔍 Employee lookup for userId ${userId}, email ${req.user.email}: employee_id = ${lookupEmployeeId}`);
@@ -609,17 +641,17 @@ router.post('/me/leave-requests', authenticateToken, async (req, res) => {
     const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
     // Get actual employee_id from employees table - NEVER use request body!
-    // First try by userId, then by email for more reliable lookup
+    // First try by userId, then by email for more reliable lookup (with tenant check)
     let employeeResult = await pool.query(
-      'SELECT id, employee_id, full_name, tenant_id FROM employees WHERE id = $1',
-      [userId]
+      'SELECT id, employee_id, full_name, tenant_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, req.user.tenantId]
     );
     
     // If not found by id, try by email from token
     if (employeeResult.rows.length === 0 && req.user.email) {
       employeeResult = await pool.query(
-        'SELECT id, employee_id, full_name, tenant_id FROM employees WHERE email = $1',
-        [req.user.email]
+        'SELECT id, employee_id, full_name, tenant_id FROM employees WHERE email = $1 AND tenant_id = $2::integer',
+        [req.user.email, req.user.tenantId]
       );
       console.log(`📋 Lookup by email ${req.user.email}: found ${employeeResult.rows.length} rows`);
     }
@@ -698,14 +730,22 @@ router.post('/me/leave-requests', authenticateToken, async (req, res) => {
 // PUT Update Leave Request
 router.put('/me/leave-requests/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   const requestId = req.params.id;
   const { leave_type, leaveType, start_date, startDate, end_date, endDate, reason, comment } = req.body;
 
   try {
-    // Check if leave request exists and belongs to user
+    // Get actual employee_id
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, tenantId]
+    );
+    const actualEmployeeId = empResult.rows[0]?.employee_id;
+    
+    // Check if leave request exists and belongs to user (with tenant check)
     const checkResult = await pool.query(
-      'SELECT * FROM leave_requests WHERE id = $1 AND user_id = $2',
-      [requestId, userId]
+      'SELECT * FROM leave_requests WHERE id = $1 AND employee_id = $2 AND tenant_id = $3::integer',
+      [requestId, actualEmployeeId, tenantId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -733,9 +773,9 @@ router.put('/me/leave-requests/:id', authenticateToken, async (req, res) => {
       UPDATE leave_requests 
       SET leave_type = $1, start_date = $2, end_date = $3, 
           total_days = $4, reason = $5, updated_at = NOW()
-      WHERE id = $6 AND user_id = $7
+      WHERE id = $6 AND employee_id = $7 AND tenant_id = $8::integer
       RETURNING *
-    `, [finalLeaveType, finalStartDate, finalEndDate, totalDays, finalReason, requestId, userId]);
+    `, [finalLeaveType, finalStartDate, finalEndDate, totalDays, finalReason, requestId, actualEmployeeId, tenantId]);
 
     const updatedRequest = result.rows[0];
 
@@ -770,15 +810,23 @@ router.put('/me/leave-requests/:id', authenticateToken, async (req, res) => {
 // DELETE Cancel/Withdraw Leave Request (Employee - Only Pending)
 router.delete('/me/leave-requests/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const tenantId = req.user.tenantId;
   const requestId = parseInt(req.params.id);
 
   console.log(`🗑️ User ${userId} attempting to delete leave request ${requestId}`);
 
   try {
-    // Check if leave request exists and belongs to user
+    // Get actual employee_id
+    const empResult = await pool.query(
+      'SELECT employee_id FROM employees WHERE id = $1 AND tenant_id = $2::integer',
+      [userId, tenantId]
+    );
+    const actualEmployeeId = empResult.rows[0]?.employee_id;
+    
+    // Check if leave request exists and belongs to user (with tenant check)
     const checkResult = await pool.query(
-      'SELECT * FROM leave_requests WHERE id = $1 AND user_id = $2',
-      [requestId, userId]
+      'SELECT * FROM leave_requests WHERE id = $1 AND employee_id = $2 AND tenant_id = $3::integer',
+      [requestId, actualEmployeeId, tenantId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -1061,7 +1109,6 @@ router.get('/admin/leave-requests', authenticateToken, async (req, res) => {
     });
   }
 });
-*/
 
 // PUT Approve Leave Request (Admin/Manager)
 router.put('/admin/leave-requests/:id/approve', authenticateToken, async (req, res) => {
@@ -1290,7 +1337,6 @@ router.put('/admin/leave-requests/:id/reject', authenticateToken, async (req, re
   }
 });
 
-/*
 // GET Leave Balance
 router.get('/me/leave-balance', authenticateToken, (req, res) => {
   const userId = req.user.userId;
@@ -1358,10 +1404,9 @@ router.get('/me/leave-balance/:leaveTypeId', authenticateToken, (req, res) => {
     data: balanceData
   });
 });
-*/
 
 // ====================================================================
-// END OF DISABLED LEAVE ROUTES - Now using routes/api.js
+// END OF LEAVE ROUTES
 // ====================================================================
 
 

@@ -776,6 +776,8 @@ pool.query('SELECT NOW()', async (err, res) => {
       } catch (err) {
         console.log('⚠️ breaks timer_record_id migration:', err.message);
       }
+      // Note: breaks table already exists (created above), work_break is legacy alias
+      // CREATE TABLE IF NOT EXISTS ensures no error if already present
       await pool.query(`
         CREATE TABLE IF NOT EXISTS work_break (
           id SERIAL PRIMARY KEY,
@@ -789,7 +791,7 @@ pool.query('SELECT NOW()', async (err, res) => {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
       `);
-      console.log('✅ work_break table ready');
+      console.log('✅ work_break table ready (legacy)');
 
       // Add/Update columns to time_entries table for production structure
       try {

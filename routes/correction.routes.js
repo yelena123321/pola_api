@@ -759,7 +759,7 @@ router.get('/admin/correction-requests/:id', authenticateToken, async (req, res)
       const breakResult = await pool.query(`
         SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(end_time, NOW()) - start_time))/60) as total_break
         FROM breaks
-        WHERE user_id::text = $1 AND DATE(start_time) = $2
+        WHERE employee_id::text = $1 AND DATE(start_time) = $2
       `, [cr.employee_id, date]);
       
       if (breakResult.rows[0]?.total_break) {
@@ -953,10 +953,13 @@ router.put('/admin/correction-requests/:id/approve', authenticateToken, async (r
       
       // Add break if provided
       if (correctionData.break_duration) {
+        const breakStartTime = `${date}T12:00:00`;
+        const breakDurationSec = correctionData.break_duration * 60;
+        const breakEndTime = new Date(new Date(breakStartTime).getTime() + breakDurationSec * 1000).toISOString();
         await pool.query(
-          `INSERT INTO breaks (timer_record_id, user_id, break_type, start_time, duration, created_at)
-           VALUES ($1, $2, 'lunch', $3, $4, NOW())`,
-          [result.rows[0].id, employeeId, clockIn, correctionData.break_duration]
+          `INSERT INTO breaks (timer_record_id, employee_id, break_type, start_time, end_time, duration_seconds, created_at)
+           VALUES ($1, $2, 'lunch', $3, $4, $5, NOW())`,
+          [result.rows[0].id, employeeId, breakStartTime, breakEndTime, breakDurationSec]
         );
         appliedChanges.push(`Added ${correctionData.break_duration} min break`);
       }
@@ -998,12 +1001,13 @@ router.put('/admin/correction-requests/:id/approve', authenticateToken, async (r
       }
     }
     else if (correctionTypeId === 6) {
-      // Wrong break duration - Update break duration
+      // Wrong break duration - Update break duration_seconds (duration is a generated column)
       if (timerQuery.rows.length > 0) {
         const timer = timerQuery.rows[0];
+        const breakDurationSec = correctionData.new_break_duration * 60;
         await pool.query(
-          `UPDATE breaks SET duration = $1 WHERE timer_record_id = $2`,
-          [correctionData.new_break_duration, timer.id]
+          `UPDATE breaks SET duration_seconds = $1 WHERE timer_record_id = $2`,
+          [breakDurationSec, timer.id]
         );
         appliedChanges.push(`Corrected break duration to ${correctionData.new_break_duration} minutes`);
       }

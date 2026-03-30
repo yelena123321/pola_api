@@ -82,14 +82,15 @@ router.get('/me/notifications', authenticateToken, async (req, res) => {
 
     // Get employee record for this user within the same tenant
     const empResult = await pool.query(
-      'SELECT employee_id, id, full_name FROM employees WHERE id = $1 AND tenant_id = $2',
+      'SELECT employee_id, id, full_name FROM employees WHERE id = $1 AND tenant_id::integer = $2',
       [userId, tenantId]
     );
     const employeeId = empResult.rows[0]?.employee_id;
     const employeeDbId = empResult.rows[0]?.id;
+    console.log(`[Notifications] userId=${userId}, tenantId=${tenantId}, userType=${userType}, employeeId=${employeeId}, employeeDbId=${employeeDbId}`);
 
     // 1. Fetch leave requests belonging to this user (tenant-isolated)
-    if (employeeId) {
+    if (employeeDbId) {
       try {
         const leaveResults = await pool.query(`
           SELECT 
@@ -116,7 +117,7 @@ router.get('/me/notifications', authenticateToken, async (req, res) => {
           FROM leave_requests lr
           JOIN employees e ON lr.employee_id::text = e.id::text
           WHERE lr.employee_id::text = $1::text
-            AND e.tenant_id = $2
+            AND e.tenant_id::integer = $2
           ORDER BY lr.created_at DESC
           LIMIT 50
         `, [employeeDbId, tenantId]);
@@ -124,8 +125,46 @@ router.get('/me/notifications', authenticateToken, async (req, res) => {
       } catch(e) { /* table may not exist */ }
     }
 
-    // 2. Fetch correction requests belonging to this user (tenant-isolated)
+    // Also try matching by employee_id field if it exists
     if (employeeId) {
+      try {
+        const leaveByEmpId = await pool.query(`
+          SELECT 
+            CONCAT('leave-', lr.id) as id,
+            'request' as type,
+            CASE 
+              WHEN lr.status = 'pending' THEN 'Your vacation request is pending'
+              WHEN lr.status = 'approved' THEN 'Your vacation request was approved'
+              WHEN lr.status = 'rejected' THEN 'Your vacation request was rejected'
+            END as title,
+            CONCAT(
+              'Leave request for ', 
+              TO_CHAR(lr.start_date, 'DD-Mon-YYYY'),
+              ' to ',
+              TO_CHAR(lr.end_date, 'DD-Mon-YYYY'),
+              ' (',
+              lr.total_days::TEXT,
+              ' days)'
+            ) as message,
+            CASE WHEN lr.status = 'pending' THEN false ELSE true END as read,
+            TO_CHAR(lr.created_at, 'HH24:MI') as created_at,
+            lr.created_at as created_at_timestamp,
+            lr.status
+          FROM leave_requests lr
+          JOIN employees e ON lr.employee_id::text = e.employee_id::text
+          WHERE lr.employee_id = $1
+            AND e.tenant_id::integer = $2
+          ORDER BY lr.created_at DESC
+          LIMIT 50
+        `, [employeeId, tenantId]);
+        // Only add if not already found via id
+        const existingIds = new Set(notifications.map(n => n.id));
+        leaveByEmpId.rows.forEach(r => { if (!existingIds.has(r.id)) notifications.push(r); });
+      } catch(e) { /* ignore */ }
+    }
+
+    // 2. Fetch correction requests belonging to this user (tenant-isolated)
+    if (employeeId || employeeDbId) {
       try {
         const correctionResults = await pool.query(`
           SELECT 
@@ -148,13 +187,14 @@ router.get('/me/notifications', authenticateToken, async (req, res) => {
             cr.created_at as created_at_timestamp,
             cr.status
           FROM correction_requests cr
-          JOIN employees e ON cr.employee_id::text = e.employee_id::text
-          WHERE cr.employee_id = $1
-            AND e.tenant_id = $2
+          JOIN employees e ON cr.employee_id::text = e.employee_id::text OR cr.employee_id::text = e.id::text
+          WHERE (cr.employee_id::text = $1::text OR cr.employee_id::text = $2::text)
+            AND e.tenant_id::integer = $3
           ORDER BY cr.created_at DESC
           LIMIT 50
-        `, [employeeId, tenantId]);
-        notifications.push(...correctionResults.rows);
+        `, [employeeId || '', employeeDbId || 0, tenantId]);
+        const existingIds = new Set(notifications.map(n => n.id));
+        correctionResults.rows.forEach(r => { if (!existingIds.has(r.id)) notifications.push(r); });
       } catch(e) { /* table may not exist */ }
     }
 
@@ -179,15 +219,43 @@ router.get('/me/notifications', authenticateToken, async (req, res) => {
             lr.created_at as created_at_timestamp,
             'pending' as status
           FROM leave_requests lr
-          JOIN employees e ON lr.employee_id::text = e.id::text
+          JOIN employees e ON lr.employee_id::text = e.employee_id::text OR lr.employee_id::text = e.id::text
           WHERE lr.status = 'pending' 
-            AND e.tenant_id = $1
+            AND e.tenant_id::integer = $1
             AND lr.created_at > NOW() - INTERVAL '30 days'
           ORDER BY lr.created_at DESC
           LIMIT 50
         `, [tenantId]);
         notifications.push(...approvalsNeeded.rows);
-      } catch(e) { /* table may not exist */ }
+      } catch(e) { console.error('Approvals query error:', e.message); }
+
+      // Also fetch pending correction requests for admin approval
+      try {
+        const correctionApprovals = await pool.query(`
+          SELECT 
+            CONCAT('pending-correction-', cr.id) as id,
+            'approval' as type,
+            'Correction Approval Needed' as title,
+            CONCAT(
+              'You have a correction request to review from ',
+              e.full_name,
+              ' for ',
+              TO_CHAR(cr.date, 'DD-Mon')
+            ) as message,
+            false as read,
+            TO_CHAR(cr.created_at, 'HH24:MI') as created_at,
+            cr.created_at as created_at_timestamp,
+            'pending' as status
+          FROM correction_requests cr
+          JOIN employees e ON cr.employee_id::text = e.employee_id::text OR cr.employee_id::text = e.id::text
+          WHERE cr.status = 'pending' 
+            AND e.tenant_id::integer = $1
+            AND cr.created_at > NOW() - INTERVAL '30 days'
+          ORDER BY cr.created_at DESC
+          LIMIT 50
+        `, [tenantId]);
+        notifications.push(...correctionApprovals.rows);
+      } catch(e) { console.error('Correction approvals error:', e.message); }
     }
 
     // Sort by created_at_timestamp (newest first)
@@ -224,6 +292,14 @@ router.get('/admin/notifications', authenticateToken, async (req, res) => {
   const tenantId = req.user.tenantId;
 
   try {
+    // Verify admin/manager role
+    const roleCheck = await verifyAdminRole(req.user, pool);
+    if (!roleCheck.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin or Manager role required.'
+      });
+    }
     const adminNotifications = [];
 
     // Figma category mapping:

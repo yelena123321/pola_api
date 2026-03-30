@@ -519,10 +519,10 @@ router.get('/admin/timesheets', authenticateToken, async (req, res) => {
         t.project_id,
         p.name as project_name,
         COALESCE(
-          (SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(b.end_time, NOW()) - b.start_time))/60)
-           FROM breaks b 
-           WHERE b.user_id::text = t.employee_id::text 
-           AND DATE(b.start_time) = t.date), 0
+          (SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(wb.end_time, NOW()) - wb.start_time))/60)
+           FROM breaks wb 
+           WHERE wb.employee_id::text = t.employee_id::text 
+           AND DATE(wb.start_time) = t.date), 0
         ) as break_minutes,
         t.created_at,
         t.updated_at
@@ -636,10 +636,10 @@ router.get('/admin/timesheets/:id', authenticateToken, async (req, res) => {
     
     // Get breaks for this day
     const breaksResult = await pool.query(`
-      SELECT break_id as id, break_type, start_time, end_time, 
+      SELECT id, break_type, start_time, end_time, 
              EXTRACT(EPOCH FROM (COALESCE(end_time, NOW()) - start_time))/60 as duration_minutes
       FROM breaks
-      WHERE user_id::text = $1 AND DATE(start_time) = $2
+      WHERE employee_id::text = $1 AND DATE(start_time) = $2
       ORDER BY start_time
     `, [row.employee_id, row.date]);
     

@@ -50,9 +50,9 @@ router.get('/me/notifications/check', authenticateToken, async (req, res) => {
     
     // Check for active break
     const breakResult = await pool.query(`
-      SELECT break_id as id, start_time, break_type 
+      SELECT id, start_time, break_type 
       FROM breaks 
-      WHERE user_id = $1 AND end_time IS NULL 
+      WHERE employee_id = $1 AND end_time IS NULL 
       ORDER BY start_time DESC LIMIT 1
     `, [userId]);
     
@@ -66,7 +66,7 @@ router.get('/me/notifications/check', authenticateToken, async (req, res) => {
       // Check if last break was taken
       const lastBreakResult = await pool.query(`
         SELECT end_time FROM breaks 
-        WHERE user_id = $1 AND end_time IS NOT NULL 
+        WHERE employee_id = $1 AND end_time IS NOT NULL 
         ORDER BY end_time DESC LIMIT 1
       `, [userId]);
       
@@ -173,9 +173,9 @@ router.post('/me/notifications/action/take-break', authenticateToken, async (req
   try {
     // Start a break
     const result = await pool.query(`
-      INSERT INTO breaks (user_id, break_type, start_time, created_at, timer_id)
-      VALUES ($1, $2, NOW(), NOW(), 'notification-break')
-      RETURNING break_id as id, break_type, start_time
+      INSERT INTO breaks (employee_id, break_type, start_time, created_at)
+      VALUES ($1, $2, NOW(), NOW())
+      RETURNING id, break_type, start_time
     `, [userId, break_type || 'Short Break']);
     
     res.json({
@@ -248,9 +248,9 @@ router.post('/me/notifications/action/end-break', authenticateToken, async (req,
     const breakResult = await pool.query(`
       UPDATE breaks 
       SET end_time = NOW(), 
-          duration = EXTRACT(EPOCH FROM (NOW() - start_time))
-      WHERE user_id = $1 AND end_time IS NULL
-      RETURNING break_id as id, start_time, end_time, duration, break_type
+          duration_seconds = EXTRACT(EPOCH FROM (NOW() - start_time))
+      WHERE employee_id = $1 AND end_time IS NULL
+      RETURNING id, start_time, end_time, duration_minutes, break_type
     `, [userId]);
     
     if (breakResult.rows.length === 0) {
